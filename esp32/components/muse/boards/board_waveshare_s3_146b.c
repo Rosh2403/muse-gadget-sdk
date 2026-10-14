@@ -496,7 +496,7 @@ static esp_err_t read_power(muse_power_t *out)
         mv = raw * 3300 / 4096;
     }
     /* Waveshare's reference uses a 3:1 divider and a measured 0.990476 correction. */
-    out->battery_mv = mv * 3000000 / 990476;
+    out->battery_mv = (int)((int64_t)mv * 3000000 / 990476);
     int pct = (out->battery_mv - 3300) * 100 / 900;
     out->battery_pct = out->battery_mv < 2500 ? -1 : pct < 0 ? 0 : pct > 100 ? 100 : pct;
     out->charging = false;
