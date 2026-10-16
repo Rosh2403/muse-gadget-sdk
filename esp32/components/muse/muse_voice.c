@@ -73,6 +73,8 @@ static volatile float s_monitor_db = -100.0f;
 static volatile bool s_chirp;
 static volatile bool s_loopback;
 static volatile bool s_mp3test;
+static volatile bool s_hi;
+static bool s_hi_once;   /* auto-play once after boot */
 
 /*
  * Pre-roll: while idle the mic keeps running into this ring, so a recording
@@ -796,7 +798,11 @@ static void voice_task(void *arg)
             muse_input_event_t ev;
             bool asleep = muse_state_asleep();
             bool battery = muse_state_on_battery();
-            bool rest = asleep && battery && !s_chirp && !s_mp3test && !s_loopback;
+            if (!s_hi_once) {
+                s_hi_once = true;
+                s_hi = true;   /* speaker check: "Hi Roshan" once after boot */
+            }
+            bool rest = asleep && battery && !s_chirp && !s_mp3test && !s_loopback && !s_hi;
 #if HOLD_NOTES
             /* A press goes first: send_held() leaves it queued and returns
              * without backing off, so retrying before it's read would spin. */
@@ -826,6 +832,26 @@ static void voice_task(void *arg)
             if (s_chirp) {
                 s_chirp = false;
                 muse_audio_chirp(1);
+                pre_reset();
+            }
+            if (s_hi) {
+                s_hi = false;
+#if CONFIG_MUSE_HATCH
+                extern const uint8_t hi_roshan_pcm_start[] asm("_binary_hi_roshan_pcm_start");
+                extern const uint8_t hi_roshan_pcm_end[] asm("_binary_hi_roshan_pcm_end");
+                const int16_t *hi = (const int16_t *)hi_roshan_pcm_start;
+                size_t n = (size_t)(hi_roshan_pcm_end - hi_roshan_pcm_start) / sizeof(int16_t);
+                ESP_LOGI(TAG, "playing Hi Roshan (%u frames)", (unsigned)n);
+                muse_state_set_mode(MUSE_MODE_SPEAKING);
+                muse_state_set_caption("HI ROSHAN");
+                for (size_t i = 0; i < n; i += MUSE_AUDIO_CHUNK) {
+                    size_t chunk = n - i < MUSE_AUDIO_CHUNK ? n - i : MUSE_AUDIO_CHUNK;
+                    muse_state_set_level(muse_audio_level(hi + i, chunk));
+                    muse_audio_write(hi + i, chunk);
+                }
+                muse_state_set_level(0);
+                go_idle("");
+#endif
                 pre_reset();
             }
             if (s_mp3test) {
@@ -935,6 +961,12 @@ void muse_voice_request_loopback(void)
 void muse_voice_request_mp3test(void)
 {
     s_mp3test = true;
+    muse_state_nudge();
+}
+
+void muse_voice_request_hi(void)
+{
+    s_hi = true;
     muse_state_nudge();
 }
 

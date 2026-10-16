@@ -254,18 +254,15 @@ To work on the UI without a board, use the
 and avatar renderer in a 412 x 412 SenseCAP Watcher window, supports mouse and
 keyboard input, and can render scripted screenshots without a display server.
 
-Replies from Muse are text: push-to-talk sends your voice note, Muse
-transcribes it and answers in writing, and boards with a screen show the
-answer as captions (Voice PE and reSpeaker Lite replies show up in the Muse app). Two
-things you can change:
-
-- **Shorter answers.** Ask for them in the message itself, such as "Answer in
-  one sentence."
-- **Spoken answers.** Send each reply's text to a text-to-speech API of your
-  choice and play the audio it returns. On boards with PSRAM, `start_tts` in
-  [`components/muse/muse_chat_session.cpp`](components/muse/muse_chat_session.cpp)
-  is the spot: it has the reply text, and the MP3 decoder, speaker and volume
-  are already wired up there.
+Push-to-talk sends your voice note; Muse transcribes it and answers. Boards
+with a screen show the answer as captions (Voice PE and reSpeaker Lite replies
+also show up in the Muse app). On boards with a speaker and PSRAM, spoken
+replies come from Muse's `GET /api/voice/tts-stream` MP3 endpoint (wired in
+`start_tts` in
+[`components/muse/muse_chat_session.cpp`](components/muse/muse_chat_session.cpp));
+turn the speaker off in settings to get text-only at reading pace. Ask for
+shorter answers in the message itself if you want them brief (for example
+"Answer in one sentence.").
 
 A few things worth knowing:
 

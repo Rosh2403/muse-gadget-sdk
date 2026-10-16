@@ -26,8 +26,9 @@
  *   2. POST /chat/stream with the transcript. The reply arrives as events on
  *      the connection's long-lived POST /chat/subscribe stream: one or more
  *      assistant messages, each delta.message_start / text_append / message_done.
- *   3. Each finished message is shown at reading pace (see start_tts to
- *      speak it with a TTS API of your own; Muse doesn't speak gadget replies).
+ *   3. Each finished message is spoken via GET /api/voice/tts-stream (MP3),
+ *      with captions paced to the audio. Speaker-off and console turns stay
+ *      text-only at reading pace.
  * A turn has no explicit end event; like Sidekick, it settles once every
  * message is done and nothing has arrived for a few seconds.
  *
@@ -237,6 +238,7 @@ struct turn_t {
     /* TTS */
     int tts_msg;             /* message being fetched (or shown, speaker off), or -1 */
     bool silent;             /* speaker off: tts_msg is paced by silence, not fetched */
+    bool tts_legacy;         /* true after falling back to /voice/tts-stream */
     uint8_t *mp3;            /* MP3_BUF */
     size_t mp3_len;
     bool mp3_ended;
@@ -1390,7 +1392,9 @@ static void message_done(int i, const char *final_text)
     if (!m.len && final_text && final_text[0]) {
         append_text(m, final_text);
     }
-    if (m.len && m.tts == TTS_NONE) {
+    /* Queue speech whenever we have a message id; voice-modality replies may
+     * carry no text. Empty + no id stays unspoken. */
+    if (m.tts == TTS_NONE && m.id[0] && (m.len || muse_settings_speaker_on())) {
         m.tts = TTS_QUEUED;
     }
     ESP_LOGI(TAG, "message %s done (%u chars)", m.id, (unsigned)m.len);
@@ -1501,6 +1505,57 @@ static void on_chat_ack(stream_t *s)
 
 /* ---- Turn: speech ---- */
 
+/* RFC 3986 unreserved, plus hyphen already covered; message ids are UUIDs. */
+static size_t uri_encode(const char *in, char *out, size_t out_cap)
+{
+    static const char *hex = "0123456789ABCDEF";
+    size_t o = 0;
+    for (size_t i = 0; in[i] && o + 1 < out_cap; i++) {
+        unsigned char c = (unsigned char)in[i];
+        bool safe = isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~';
+        if (safe) {
+            out[o++] = (char)c;
+        } else if (o + 3 < out_cap) {
+            out[o++] = '%';
+            out[o++] = hex[c >> 4];
+            out[o++] = hex[c & 0xf];
+        } else {
+            break;
+        }
+    }
+    out[o] = '\0';
+    return o;
+}
+
+static void pace_as_text(msg_t &m)
+{
+    m.pcm_frames = (uint32_t)(m.len * MIC_RATE / TEXT_CHARS_PER_S);
+    if (m.pcm_frames < MIC_RATE / 4) {
+        m.pcm_frames = MIC_RATE / 4;
+    }
+    s_turn.silent = true;
+}
+
+/* Opens Muse's MP3 TTS stream for message i. `legacy` uses the pre-/api path. */
+static bool open_tts_stream(int i, bool legacy)
+{
+    char enc[160];
+    char path[200];
+    uri_encode(s_turn.msgs[i].id, enc, sizeof(enc));
+    snprintf(path, sizeof(path), "%s?message_id=%s",
+             legacy ? "/voice/tts-stream" : "/api/voice/tts-stream", enc);
+    int64_t id = open_stream(K_TTS, "GET", path, nullptr, "audio/mpeg", nullptr, true);
+    if (!id) {
+        return false;
+    }
+    stream_t *s = find_stream(id);
+    if (s) {
+        s->msg = i;
+    }
+    s_turn.tts_legacy = legacy;
+    return true;
+}
+
 static void start_tts(void)
 {
     if (s_turn.tts_msg >= 0) {
@@ -1511,28 +1566,33 @@ static void start_tts(void)
         if (m.tts != TTS_QUEUED) {
             continue;
         }
-        /*
-         * Replies are text, shown at reading pace: silence in place of speech
-         * paces the captions and ends the turn. To speak them instead, send
-         * the message's text (s_turn.texts + i * TEXT_MAX, if texts was
-         * allocated; up to TEXT_MAX - 1 bytes) to a TTS API of your choice and
-         * play the MP3 it returns. In place of the silence below: keep
-         * m.tts = TTS_ACTIVE and s_turn.tts_msg = i, set s_turn.silent = false,
-         * m.pcm_start = s_turn.pcm_out, m.pcm_frames = 0, s_turn.mp3_len = 0,
-         * s_turn.mp3_ended = false, s_turn.kbps = 0, s_turn.down_rate = 0 and
-         * mp3dec_init(&s_turn.dec). Then, on this task, pass the MP3 to
-         * tts_data() as it arrives (it buffers up to MP3_BUF and drops the
-         * rest, so hold off while it's full) and set s_turn.mp3_ended at the
-         * end. decode() plays it at the speaker's volume, captions following,
-         * and finishes the message once it's drained.
-         */
         m.pcm_start = s_turn.pcm_out;
-        m.pcm_frames = (uint32_t)(m.len * MIC_RATE / TEXT_CHARS_PER_S);
+        m.pcm_frames = 0;
         m.tts = TTS_ACTIVE;
         s_turn.tts_msg = i;
-        s_turn.silent = true;
-        ESP_LOGI(TAG, "showing message %s (%u chars)", m.id, (unsigned)m.len);
+        s_turn.mp3_len = 0;
+        s_turn.mp3_ended = false;
+        s_turn.kbps = 0;
+        s_turn.down_rate = 0;
+        s_turn.tts_legacy = false;
         show_reply_start(m);
+
+        /* Console turns stay unspoken; speaker-off shows text at reading pace. */
+        if (s_turn.text || !muse_settings_speaker_on() || !m.id[0]) {
+            pace_as_text(m);
+            ESP_LOGI(TAG, "showing message %s (%u chars)", m.id, (unsigned)m.len);
+            return;
+        }
+
+        s_turn.silent = false;
+        mp3dec_init(&s_turn.dec);
+        if (!open_tts_stream(i, false)) {
+            pace_as_text(m);
+            ESP_LOGW(TAG, "TTS open failed; showing %s as text", m.id);
+            return;
+        }
+        mark(M_TTS);
+        ESP_LOGI(TAG, "speaking message %s (%u chars)", m.id, (unsigned)m.len);
         return;
     }
 }
@@ -1557,9 +1617,12 @@ static void tts_end(stream_t *s, bool ok)
     }
     if (ok) {
         s_turn.mp3_ended = true;   /* decode() drains the rest, then finishes */
-    } else {
-        s_turn.msgs[i].tts = TTS_FINISHED;
-        s_turn.tts_msg = -1;
+    } else if (!s_turn.silent && s_turn.mp3_len == 0) {
+        /* No audio arrived: fall back to reading pace so captions still finish. */
+        pace_as_text(s_turn.msgs[i]);
+        ESP_LOGW(TAG, "TTS failed; showing message %s as text", s_turn.msgs[i].id);
+    } else if (!ok) {
+        s_turn.mp3_ended = true;   /* play whatever landed, then finish */
     }
 }
 
@@ -1798,6 +1861,22 @@ static bool on_http_error(stream_t *s, const ApplicationResponseView &resp)
     memcpy(body, resp.body.data(), n);
     body[n] = '\0';
     ESP_LOGW(TAG, "stream %lld: HTTP %d %s", (long long)s->id, (int)resp.status, body);
+
+    /* Linux link_client: /api/voice/tts-stream 404 → retry /voice/tts-stream. */
+    if (s->kind == K_TTS && (int)resp.status == 404 && !s_turn.tts_legacy) {
+        int msg = s->msg;
+        close_stream(s);
+        if (msg >= 0 && msg == s_turn.tts_msg && open_tts_stream(msg, true)) {
+            ESP_LOGI(TAG, "TTS: trying legacy /voice/tts-stream");
+            return true;
+        }
+        if (msg >= 0 && msg == s_turn.tts_msg) {
+            pace_as_text(s_turn.msgs[msg]);
+            ESP_LOGW(TAG, "TTS fallback open failed; showing as text");
+        }
+        return true;
+    }
+
     return stream_end(s, false);
 }
 

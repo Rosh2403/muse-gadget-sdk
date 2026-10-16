@@ -45,6 +45,7 @@ if(CONFIG_MUSE_ENABLED)
     if(CONFIG_MUSE_HATCH)
         list(APPEND srcs "muse_chat.c" "muse_account_api.c" "muse_chat_session.cpp")
         list(APPEND embed "test_reply.mp3")   # muse_hatch_mp3_selftest
+        list(APPEND embed "hi_roshan.pcm")    # one-shot speaker check greeting
     else()
         list(APPEND srcs "muse_chat_link.c")   # text replies over Link's session
     endif()

@@ -421,10 +421,13 @@ static void set_mic_gain(esp_codec_dev_handle_t mic, int db)
 
 static esp_err_t audio_init(esp_codec_dev_handle_t *spk, esp_codec_dev_handle_t *mic)
 {
+    /* PCM5101 (SCK grounded): PLL from BCK/LRCK. Use 32-bit Philips slots so
+     * BCK is 64×fs — what Waveshare's IDF example and most ESP32 PCM5101
+     * boards run. Only OUTL feeds the NS8002 amp (R57 is its gain trimmer). */
     i2s_chan_config_t tx_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
     tx_cfg.auto_clear = true;
     ESP_RETURN_ON_ERROR(i2s_new_channel(&tx_cfg, &s_tx, NULL), TAG, "speaker i2s");
-    const i2s_std_config_t spk_cfg = {
+    i2s_std_config_t spk_cfg = {
         .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(MUSE_AUDIO_RATE),
         .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(
             I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO),
@@ -436,6 +439,8 @@ static esp_err_t audio_init(esp_codec_dev_handle_t *spk, esp_codec_dev_handle_t 
             .din = I2S_GPIO_UNUSED,
         },
     };
+    spk_cfg.slot_cfg.slot_bit_width = I2S_SLOT_BIT_WIDTH_32BIT;
+    spk_cfg.slot_cfg.ws_width = 32;
     ESP_RETURN_ON_ERROR(i2s_channel_init_std_mode(s_tx, &spk_cfg), TAG, "speaker mode");
     ESP_RETURN_ON_ERROR(i2s_channel_enable(s_tx), TAG, "speaker on");
 
