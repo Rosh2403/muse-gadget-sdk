@@ -68,8 +68,8 @@ static inline void muse_chat_reject(muse_chat_rejected_t *rejected, const char *
 }
 
 /* A voice note is a POST /chat/stream body: NOTE_HEAD, a base64 WAV, NOTE_TAIL.
- * Keep output_modality "text": Muse's voice modality currently fails this VM
- * ("Sorry, I ran into a problem…"). TTS still tries to speak text replies. */
+ * output_modality stays "text" so replies remain caption-friendly; start_tts
+ * still requests Muse's TTS stream when the speaker is on. */
 #define MUSE_HATCH_NOTE_HEAD \
     "{\"message\":\"\",\"output_modality\":\"text\",\"items\":[{\"type\":\"file\"," \
     "\"mime_type\":\"audio/wav\",\"filename\":\"voice_note.wav\",\"data_base64\":\""

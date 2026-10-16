@@ -163,8 +163,6 @@ static void run_command(char *cmd)
         muse_voice_request_loopback();
     } else if (!strcmp(cmd, "test.chirp")) {
         muse_voice_request_chirp();
-    } else if (!strcmp(cmd, "test.hi")) {
-        muse_voice_request_hi();
     } else if (!strcmp(cmd, "volume") && parse_int(v, 0, 100, &n)) {
         muse_settings_set_volume(n);
     } else if (!strcmp(cmd, "speaker") && parse_int(v, 0, 1, &n)) {
