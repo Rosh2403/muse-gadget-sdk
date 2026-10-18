@@ -112,6 +112,19 @@ idf.py build
 This builds for the ESP32-C5 DevKitC-1. The firmware lands in
 `build/muse-gadget.bin`.
 
+A build without a token can get one later over serial: send the line
+`>sdk_token=mgst_…` on the board's console, and it stores the token in NVS,
+answers `@sdk_token ok` and restarts with it. A stored token takes precedence
+over the build's. The [web flasher](../web-flasher/README.md) does this for
+you after installing.
+
+Muse records a gadget's SDK token when the gadget pairs, and nowhere else. If
+you change the token on a paired gadget, or revoke the one it paired with,
+pair it again: hold the button for 5 seconds, then pair it in the Muse app.
+Until then it keeps the token it paired with, and once that token is revoked it
+can't reach Muse. The boot log warns when the gadget is paired with a token
+other than its current one.
+
 ### 3. Flash
 
 Plug in the board and flash it:
@@ -194,6 +207,7 @@ status screen.
 | M5Stack CoreS3 | UI, touch, PWR push-to-talk, settings, images | see [`AGENTS.md`](AGENTS.md#boards-with-the-full-ui-by-hand) |
 | Guition JC3248W535 | UI, touch, settings, images, speaker; push-to-talk with an added I2S mic | `tools/muse/board.sh build jc3248w535` |
 | Waveshare ESP32-S3-Touch-LCD-7 | UI, touch, settings, images; no built-in audio | `tools/muse/board.sh build lcd7` |
+| Waveshare ESP32-S3-Touch-LCD-1.28 | UI, touch, settings, images; no built-in audio | `tools/muse/board.sh build lcd128` |
 | M5Stack StickC Plus2 | UI, push-to-talk, two-button menu, images | see [`AGENTS.md`](AGENTS.md#boards-with-the-full-ui-by-hand) |
 | M5Stack Core2 (v1.0) | UI, push-to-talk on the touch strip, touch menu, images | `tools/muse/board.sh build core2` |
 | Freenove FNK0104B | UI, touch, BOOT push-to-talk, settings, images | `tools/muse/board.sh build fnk0104b` |
@@ -266,9 +280,10 @@ shorter answers in the message itself if you want them brief (for example
 
 A few things worth knowing:
 
-- Your SDK token ships inside the firmware, so treat it as an identifier
-  rather than a password. If it leaks, revoke it on gadgets.muse.ai, generate
-  a new one, and rebuild.
+- Your SDK token ships inside the firmware, or sits in NVS if you set it over
+  serial, so treat it as an identifier rather than a password. If it leaks,
+  revoke it on gadgets.muse.ai, generate a new one, and rebuild or send the
+  new one over serial.
 - **We strongly recommend enabling NVS encryption** if your board supports it.
   NVS stores Wi-Fi credentials and device tokens in flash; without encryption,
   anyone with physical access to the board can read them. Enable it with
