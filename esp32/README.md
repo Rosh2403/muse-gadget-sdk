@@ -270,12 +270,13 @@ keyboard input, and can render scripted screenshots without a display server.
 
 Push-to-talk sends your voice note; Muse transcribes it and answers. Boards
 with a screen show the answer as captions (Voice PE and reSpeaker Lite replies
-also show up in the Muse app). On boards with a speaker and PSRAM, spoken
-replies come from Muse's `GET /api/voice/tts-stream` MP3 endpoint (wired in
-`start_tts` in
-[`components/muse/muse_chat_session.cpp`](components/muse/muse_chat_session.cpp));
-turn the speaker off in settings to get text-only at reading pace. Ask for
-shorter answers in the message itself if you want them brief (for example
+also show up in the Muse app). Muse's own TTS stream currently rejects
+gadget text replies (HTTP 400); spoken output uses [ElevenLabs](https://elevenlabs.io)
+streaming TTS from `start_tts` in
+[`components/muse/muse_chat_session.cpp`](components/muse/muse_chat_session.cpp)
+when `CONFIG_MUSE_ELEVENLABS_API_KEY` is set or you send `>elevenlabs.key=…`
+over USB. Speaker-off stays text-only at reading pace. Ask for shorter
+answers in the message itself if you want them brief (for example
 "Answer in one sentence.").
 
 A few things worth knowing:

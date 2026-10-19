@@ -173,6 +173,10 @@ static void run_command(char *cmd)
         muse_settings_set_brightness(n);
     } else if (!strcmp(cmd, "sleep") && parse_int(v, 0, 3600, &n)) {
         muse_settings_set_sleep_s(n);
+    } else if (!strcmp(cmd, "elevenlabs.key")) {
+        if (muse_settings_set_elevenlabs_key(v) != ESP_OK) {
+            res = "error: key too long";
+        }
     } else {
         res = "error: unknown command or bad value";
     }

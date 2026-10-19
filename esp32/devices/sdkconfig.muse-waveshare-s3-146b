@@ -18,6 +18,10 @@
 # Load last, after sdkconfig.muse.
 CONFIG_IDF_TARGET="esp32s3"
 CONFIG_MUSE_BOARD_WAVESHARE_S3_146B=y
+# PCM5101 has no volume register; 100% is full-scale into the NS8002.
+CONFIG_MUSE_DEFAULT_VOLUME=25
+# api.elevenlabs.io sends a GTS root cross-signed by a GlobalSign CA.
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_CROSS_SIGNED_VERIFY=y
 CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
 CONFIG_ESPTOOLPY_FLASHSIZE="16MB"
 
