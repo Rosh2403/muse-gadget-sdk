@@ -30,7 +30,7 @@
 #include "cJSON.h"
 
 #include "esp_heap_caps.h"
-#if CONFIG_MUSE_WATCHER_CAMERA
+#if CONFIG_MUSE_WATCHER_CAMERA || CONFIG_MUSE_P4_CSI_CAMERA
 #include "freertos/idf_additions.h"
 #endif
 #include "esp_timer.h"
@@ -53,6 +53,7 @@
 #include "ble_commands.h"
 #endif
 #include "ble_server.h"
+#include "helper_task.h"
 #include "factory_test.h"
 #include "vm_api.h"
 #include "vm_connect.h"
@@ -76,8 +77,19 @@
 #if CONFIG_HOMEHUB_RETERMINAL_SHT4X
 #include "reterminal_sht4x.h"
 #endif
+#if CONFIG_HOMEHUB_LED_BACKEND_RETERMINAL_UC8179 || \
+    CONFIG_HOMEHUB_LED_BACKEND_RETERMINAL_SPECTRA6
+#include "reterminal_battery.h"
+#endif
+#if CONFIG_HOMEHUB_WAVESHARE_154G_SHTC3
+#include "waveshare_154g_shtc3.h"
+#endif
 #if CONFIG_MUSE_WATCHER_CAMERA
 #include "boards/watcher_camera.h"
+#define camera_capture_base64 watcher_camera_capture
+#elif CONFIG_MUSE_P4_CSI_CAMERA
+#include "boards/p4_csi_camera.h"
+#define camera_capture_base64 p4_csi_camera_capture
 #endif
 #if CONFIG_MUSE_ENABLED
 #include "muse_glue.h"
@@ -119,7 +131,8 @@ static const char *HEARTBEAT_TAG = "link.heartbeat";
 #define PAIRING_CONFIRMED_IDLE_TIMEOUT_MS (120 * 1000)
 
 // OTA rollback: how long a freshly-installed (PENDING_VERIFY) image has to
-// reach the authenticated control WebSocket before the bootloader reverts it.
+// reach the authenticated control WebSocket before the bootloader reverts it
+// (on every board; on the ESP-Mosaico, not for a Vibe Mode install).
 // The control WS is the recovery channel — if a new image can't reach it,
 // no future device.ota could repair the device, so rolling back is correct.
 #define OTA_VERIFY_TIMEOUT_US (300LL * 1000000LL)
@@ -221,7 +234,7 @@ static uint32_t advance_confirm_generation_locked(void) {
     if (s_confirm_timeout_task) {
         // The waiter owns no resources until it clears this handle under
         // the same lock after its delay.
-        vTaskDelete(s_confirm_timeout_task);
+        helper_task_delete(s_confirm_timeout_task);
         s_confirm_timeout_task = NULL;
     }
     return ++s_confirm_generation;
@@ -234,8 +247,8 @@ static BaseType_t start_confirm_timeout(TaskFunction_t task, const char *name,
     if (s_confirm_generation == generation
         && link_pairing_session_is_current(session_generation)) {
         s_confirm_session_generation = session_generation;
-        rc = xTaskCreate(task, name, 4096, (void *)(uintptr_t)generation, 4,
-                         &s_confirm_timeout_task);
+        rc = helper_task_create(task, name, 4096, (void *)(uintptr_t)generation, 4,
+                                &s_confirm_timeout_task);
     }
     setup_window_lock_give();
     return rc;
@@ -1302,7 +1315,7 @@ static void scan_refresh_task(void *arg) {
     }
     heap_snapshot("after wifi_scan");
     stack_monitor_record(NULL);
-    vTaskDelete(NULL);
+    helper_task_delete(NULL);
 }
 
 static bool schedule_scan_refresh(bool reply_requested, bool *joined) {
@@ -1320,7 +1333,7 @@ static bool schedule_scan_refresh(bool reply_requested, bool *joined) {
         return true;
     }
 
-    if (xTaskCreate(scan_refresh_task, "scan_rfsh", 4096, NULL, 4, NULL)
+    if (helper_task_create(scan_refresh_task, "scan_rfsh", 4096, NULL, 4, NULL)
         != pdPASS) {
         atomic_store_explicit(&s_scan_refresh_flags, 0, memory_order_release);
         ESP_LOGE(TAG, "failed to start wifi scan task");
@@ -1574,7 +1587,7 @@ static void draw_url_done(const image_fetch_result_t *r, void *user) {
 }
 #endif
 
-#if CONFIG_MUSE_WATCHER_CAMERA
+#if CONFIG_MUSE_WATCHER_CAMERA || CONFIG_MUSE_P4_CSI_CAMERA
 typedef struct {
     noise_ctrl_session_generation_t session_generation;
     char request_id[64];
@@ -1585,7 +1598,7 @@ static void watcher_camera_capture_task(void *arg) {
     char *image = NULL;
     const char *error = NULL;
     cJSON *result = cJSON_CreateObject();
-    bool ok = watcher_camera_capture(&image, &error);
+    bool ok = camera_capture_base64(&image, &error);
     cJSON_AddBoolToObject(result, "ok", ok);
     if (ok) {
         cJSON *payload = cJSON_AddObjectToObject(result, "payload");
@@ -1877,19 +1890,25 @@ static cJSON *on_ws_command(
         return queue_ws_control(WS_CONTROL_SET_VM, url);
     }
 #if CONFIG_HOMEHUB_DISPLAY_COMMANDS
-    if (strcmp(command, "display.draw_url") == 0) {
-        cJSON *url = cJSON_GetObjectItem(params, "url");
+    bool draw_file = strcmp(command, "display.draw_file") == 0;
+    if (draw_file || strcmp(command, "display.draw_url") == 0) {
+        // draw_file takes a path on the VM, fetched over this session.
+        cJSON *target = cJSON_GetObjectItem(params, draw_file ? "path" : "url");
         cJSON *row = cJSON_GetObjectItem(params, "row");
-        if (!cJSON_IsString(url) || !url->valuestring || !url->valuestring[0]) {
-            return command_error("missing_param", "url is required");
+        if (!cJSON_IsString(target) || !target->valuestring || !target->valuestring[0]) {
+            return command_error("missing_param",
+                                 draw_file ? "path is required" : "url is required");
         }
         draw_url_ctx_t *ctx = calloc(1, sizeof(*ctx));
         if (!ctx) return command_error("out_of_memory", "failed to allocate");
         ctx->session_generation = session_generation;
         strncpy(ctx->request_id, request_id, sizeof(ctx->request_id) - 1);
         const char *code, *message;
-        if (!image_fetch_start(url->valuestring, cJSON_IsNumber(row) ? row->valueint : IMAGE_FETCH_DEFAULT_ROW,
-                               draw_url_done, ctx, &code, &message)) {
+        int top = cJSON_IsNumber(row) ? row->valueint : IMAGE_FETCH_DEFAULT_ROW;
+        bool started = draw_file
+            ? image_fetch_start_vm(target->valuestring, top, draw_url_done, ctx, &code, &message)
+            : image_fetch_start(target->valuestring, top, draw_url_done, ctx, &code, &message);
+        if (!started) {
             free(ctx);
             return command_error(code, message);
         }
@@ -1904,7 +1923,7 @@ static cJSON *on_ws_command(
         return result;
     }
 #endif
-#if CONFIG_MUSE_WATCHER_CAMERA
+#if CONFIG_MUSE_WATCHER_CAMERA || CONFIG_MUSE_P4_CSI_CAMERA
     if (strcmp(command, "camera.capture") == 0) {
         watcher_camera_task_args_t *args = calloc(1, sizeof(*args));
         if (!args) return command_error("out_of_memory", "failed to allocate camera request");
@@ -1933,6 +1952,11 @@ static cJSON *on_ws_command(
 #if CONFIG_HOMEHUB_RETERMINAL_SHT4X
     if (strcmp(command, "sensors.read") == 0) {
         return reterminal_sht4x_command();
+    }
+#endif
+#if CONFIG_HOMEHUB_WAVESHARE_154G_SHTC3
+    if (strcmp(command, "sensors.read") == 0) {
+        return waveshare_154g_shtc3_command();
     }
 #endif
     if (strcmp(command, "device.reset_vm") == 0) {
@@ -2003,7 +2027,7 @@ static void confirm_timeout_task(void *arg) {
         ble_server_disconnect_pairing_session(session_generation);
     }
     stack_monitor_record(NULL);
-    vTaskDelete(NULL);
+    helper_task_delete(NULL);
 }
 
 static void confirmed_idle_timeout_task(void *arg) {
@@ -2026,7 +2050,7 @@ static void confirmed_idle_timeout_task(void *arg) {
         ble_server_disconnect_pairing_session(session_generation);
     }
     stack_monitor_record(NULL);
-    vTaskDelete(NULL);
+    helper_task_delete(NULL);
 }
 
 static void notify_pairing_confirmed(uint32_t session_generation) {
@@ -2511,6 +2535,7 @@ static void ota_verify_task(void *arg) {
         if (noise_ctrl_is_connected()) {
             if (esp_ota_mark_app_valid_cancel_rollback() == ESP_OK) {
                 ESP_LOGI(TAG, "OTA image validated (control WS up)");
+                ota_verify_forget();
             } else {
                 ESP_LOGE(TAG, "esp_ota_mark_app_valid_cancel_rollback failed");
             }
@@ -2522,6 +2547,7 @@ static void ota_verify_task(void *arg) {
     }
     if (s_ota_pending_verify) {
         ESP_LOGE(TAG, "OTA verify timed out; rolling back to previous firmware");
+        ota_verify_forget();
         stack_monitor_record(NULL);
         esp_ota_mark_app_invalid_rollback_and_reboot();
         // Only returns when there is no valid partition to revert to.
@@ -2574,6 +2600,9 @@ void app_run(void) {
     config_store_init();
     wifi_known_init();
 
+#if CONFIG_ESP_HOSTED_ENABLED
+    wifi_mgr_init();   /* identity_init() reads the STA MAC from the coprocessor */
+#endif
     identity_init();
 #if CONFIG_MUSE_ENABLED
     muse_glue_storage_ready();
@@ -2634,12 +2663,24 @@ void app_run(void) {
     // Arm OTA rollback verification. If the running image was just installed
     // by device.ota it boots as PENDING_VERIFY and must reach the control WS
     // within OTA_VERIFY_TIMEOUT_US, else the bootloader reverts it on reboot.
+    // The one exception is the ESP-Mosaico in Vibe Mode: its Vibe Mode
+    // firmware installs apps itself and leaves them PENDING_VERIFY, and that
+    // is nothing to roll back (ota_installed_by_vibe_mode checks the board,
+    // the build and the flash layout). Every other PENDING_VERIFY image, on
+    // every board, is checked.
     const esp_partition_t *running = esp_ota_get_running_partition();
     esp_ota_img_states_t ota_state;
     if (running && esp_ota_get_state_partition(running, &ota_state) == ESP_OK
         && ota_state == ESP_OTA_IMG_PENDING_VERIFY) {
-        s_ota_pending_verify = true;
-        ESP_LOGW(TAG, "running a PENDING_VERIFY OTA image; awaiting health check");
+        if (!ota_installed_by_vibe_mode()) {
+            s_ota_pending_verify = true;
+            ESP_LOGW(TAG, "running a PENDING_VERIFY OTA image; awaiting health check");
+        } else if (esp_ota_mark_app_valid_cancel_rollback() == ESP_OK) {
+            ESP_LOGI(TAG, "PENDING_VERIFY image installed by Vibe Mode; marked valid");
+        }
+    }
+    if (!s_ota_pending_verify) {
+        ota_verify_forget();   // an update that never booted
     }
     xTaskCreate(ota_verify_task, "ota_verify", 4096, NULL, 4, NULL);
 
@@ -2731,6 +2772,10 @@ void app_run(void) {
         ESP_LOGW(TAG, "button init failed — physical setup reset unavailable");
     }
 #endif
+#if CONFIG_HOMEHUB_WAVESHARE_154G_SHTC3
+    // Before voice_init(): the voice task may use the same I2C bus.
+    waveshare_154g_shtc3_init();
+#endif
 #if CONFIG_HOMEHUB_VOICE
     voice_init();
 #endif
@@ -2739,6 +2784,10 @@ void app_run(void) {
 #endif
 #if CONFIG_HOMEHUB_RETERMINAL_SHT4X
     reterminal_sht4x_init();
+#endif
+#if CONFIG_HOMEHUB_LED_BACKEND_RETERMINAL_UC8179 || \
+    CONFIG_HOMEHUB_LED_BACKEND_RETERMINAL_SPECTRA6
+    reterminal_battery_init();
 #endif
 
     if (!setup_complete) {
@@ -2761,10 +2810,12 @@ void app_run(void) {
         ble_coex_set_active(true);
         ui_set_ble("companion");
 #endif
-#if CONFIG_MUSE_ENABLED && CONFIG_SPIRAM
+#if CONFIG_MUSE_ENABLED && CONFIG_SPIRAM && !CONFIG_MUSE_BOARD_CROWPANEL_ADVANCE_43
         // Muse may turn on its BLE companion later. The controller needs a
         // 30 KB internal block that TLS and the VM session leave fragmented,
         // so bring the stack up now; it stays silent until advertising is on.
+        // The CrowPanel starts it lazily instead, after muse_app_run() has
+        // reserved its internal I2S DMA buffers.
         start_ble_setup_server_if_needed();
 #endif
     }

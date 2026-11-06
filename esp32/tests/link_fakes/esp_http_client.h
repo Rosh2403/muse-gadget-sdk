@@ -18,11 +18,14 @@
 
 #include <stddef.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 typedef int esp_err_t;
 
 #define ESP_OK 0
-#define ESP_FAIL -1
+#ifndef ESP_FAIL
+#define ESP_FAIL (-1)
+#endif
 
 typedef enum {
     HTTP_METHOD_GET = 0,
@@ -82,5 +85,12 @@ esp_err_t esp_http_client_cleanup(esp_http_client_handle_t client);
 esp_err_t esp_http_client_get_url(esp_http_client_handle_t client, char *url, int len);
 esp_err_t esp_http_client_delete_header(esp_http_client_handle_t client, const char *key);
 esp_err_t esp_http_client_set_redirection(esp_http_client_handle_t client);
+/* Streaming requests, as muse_chat_session.cpp fetches speech. */
+esp_err_t esp_http_client_open(esp_http_client_handle_t client, int write_len);
+int esp_http_client_write(esp_http_client_handle_t client, const char *buffer, int len);
+int64_t esp_http_client_fetch_headers(esp_http_client_handle_t client);
+int esp_http_client_read(esp_http_client_handle_t client, char *buffer, int len);
+bool esp_http_client_is_complete_data_received(esp_http_client_handle_t client);
+esp_err_t esp_http_client_close(esp_http_client_handle_t client);
 
 const char *esp_err_to_name(esp_err_t err);
