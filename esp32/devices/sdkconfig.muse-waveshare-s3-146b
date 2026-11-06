@@ -38,6 +38,11 @@ CONFIG_ESP32S3_DATA_CACHE_LINE_64B=y
 
 CONFIG_LV_DRAW_SW_DRAW_UNIT_CNT=2
 CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_EXTERNAL=y
+# IRAM and DRAM share the same SRAM, so code kept in IRAM is heap the display,
+# Wi-Fi and voice don't get; without this the microphone's DMA buffers don't
+# fit. BLE is only for pairing and setup, and with XiP from PSRAM the
+# controller keeps running during flash writes. Moves ~20 KB to flash.
+CONFIG_BT_CTRL_RUN_IN_FLASH_ONLY=y
 CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
 CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y
 # CONFIG_SPIRAM_IGNORE_NOTFOUND is not set

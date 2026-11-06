@@ -1930,7 +1930,7 @@ static bool tts_fetch(const tts_job_t &j)
         } else {
             esp_http_client_fetch_headers(c);
             int status = esp_http_client_get_status_code(c);
-            static uint8_t buf[TTS_READ_BYTES];
+            EXT_RAM_BSS_ATTR static uint8_t buf[TTS_READ_BYTES];
             if (status != 200) {
                 int n = esp_http_client_read(c, (char *)buf, sizeof(buf) - 1);
                 buf[n > 0 ? n : 0] = '\0';
@@ -1963,7 +1963,7 @@ static bool tts_fetch(const tts_job_t &j)
 static void tts_task(void *arg)
 {
     (void)arg;
-    static tts_job_t j;
+    EXT_RAM_BSS_ATTR static tts_job_t j;
     for (;;) {
         if (xQueueReceive(s_tts_jobs, &j, portMAX_DELAY) != pdTRUE) {
             continue;
@@ -1985,7 +1985,7 @@ static bool tts_start(const char *text)
             return false;
         }
     }
-    static tts_job_t j;
+    EXT_RAM_BSS_ATTR static tts_job_t j;
     j.job = ++s_tts_job;
     strlcpy(j.text, text, sizeof(j.text));
     xStreamBufferReset(s_tts_rx);
@@ -2066,7 +2066,7 @@ static void tts_pump(void)
     if (!s_tts_pending || s_turn.tts_msg < 0) {
         return;
     }
-    static uint8_t chunk[TTS_READ_BYTES];
+    EXT_RAM_BSS_ATTR static uint8_t chunk[TTS_READ_BYTES];
     while (MP3_BUF - s_turn.mp3_len >= sizeof(chunk)) {
         size_t n = s_tts_rx ? xStreamBufferReceive(s_tts_rx, chunk, sizeof(chunk), 0) : 0;
         if (!n) {
