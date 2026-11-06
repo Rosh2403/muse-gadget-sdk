@@ -128,11 +128,27 @@ size_t muse_hatch_turn_audio_wait(const int16_t *pcm, size_t frames, int wait_ms
  *   @chat {"seq":N,"type":TYPE,...}
  * TYPE is "sent" (bytes), "busy" (on: the agent is working), "text" (msg, text),
  * "message_done" (msg, bytes), "done" (messages, complete) or "error" (text).
- * tools/muse/chat.py reads them. Takes `text` (malloc'd) and frees it. A voice
- * press ends a typed turn; a typed turn is refused while a voice turn runs.
+ * tools/muse/chat.py reads them. With the speaker on, the reply is spoken too.
+ * Takes `text` (malloc'd) and frees it; false if it couldn't be queued (Muse
+ * isn't set up, or busy). A voice press ends a typed turn; a typed turn is
+ * refused while a voice turn runs.
  */
-void muse_hatch_text_turn(char *text);
+bool muse_hatch_text_turn(char *text);
 void muse_hatch_text_cancel(void);
+
+typedef enum {
+    MUSE_ASK_OK,            /* `out` has the reply, each message's text with a blank line between */
+    MUSE_ASK_FAILED,        /* the turn failed, and `out` says why */
+    MUSE_ASK_TIMEOUT,       /* no answer in time: the turn is cancelled */
+    MUSE_ASK_UNAVAILABLE,   /* Muse isn't set up, or another caller is waiting */
+} muse_ask_result_t;
+
+/*
+ * A typed turn asked over the network (muse_remote.c): the reply comes back
+ * here instead of being spoken. Blocks up to wait_ms. Takes `text` (malloc'd)
+ * and frees it.
+ */
+muse_ask_result_t muse_chat_ask(char *text, char *out, size_t cap, uint32_t wait_ms);
 
 /*
  * Prints one "@chat" line per call (more if `text` is long): the type, then the

@@ -26,6 +26,7 @@
 #include "muse_ble.h"
 #include "muse_chat.h"
 #include "muse_input.h"
+#include "muse_remote.h"
 #include "muse_settings.h"
 #include "muse_state.h"
 #include "muse_ui.h"
@@ -90,6 +91,11 @@ void muse_app_run(const muse_board_t *board)
     }
 
     muse_hatch_start();
+#if CONFIG_MUSE_REMOTE_ASK
+    if (muse_remote_start() != ESP_OK) {
+        ESP_LOGE(TAG, "asking over Wi-Fi unavailable");
+    }
+#endif
     /* Home Link owns the radios; these just hand it the saved settings. */
     muse_wifi_apply();
     muse_ble_apply();

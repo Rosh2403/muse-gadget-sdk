@@ -37,6 +37,7 @@ class ChatSession(unittest.TestCase):
 #include "minimp3.h"
 #include "muse_chat_priv.h"
 #define ESP_LOGI(...) ((void)0)
+#define ESP_LOGW(...) ((void)0)
 ''' + constants + types + r'''
 static turn_t s_turn;
 static char s_reply_shown[EV_TEXT];
@@ -58,6 +59,9 @@ static void turn_fail(const char *) { turn_finish(); }
 static bool ensure_connected() { return true; }
 bool muse_hatch_configured() { return true; }
 static void resampler_init(resampler_t *, int, int) {}
+static bool muse_settings_speaker_on() { return true; }
+static int retries;
+static void retry_voice_as_text() { retries++; }
 ''' + reset + handlers + r'''
 static void begin(bool typed = false) {
     assert(turn_start(s_turn.gen + 1, typed));
@@ -128,12 +132,54 @@ static void bounded_rejections() {
     event("message.assistant", "second", "note", "Second");
     assert(s_turn.nmsgs == 2 && s_turn.msgs[0].done && s_turn.msgs[1].done);
 }
+static char texts[MAX_MSGS * TEXT_MAX];
+static void app_markup() {
+    s_turn.texts = texts;
+    for (bool typed : {false, true}) {
+        begin(typed);
+        event("delta.message_start", "reply", "note");
+        event("delta.text_append", "reply", "", "Got it, I'll remind you at 7:20 PM today. [[hatch wid");
+        event("delta.text_append", "reply", "", "get:widget-d4d8e2]]");
+        event("delta.message_done", "reply");
+        assert(!strcmp(texts, "Got it, I'll remind you at 7:20 PM today."));
+        assert(s_turn.msgs[0].len == strlen(texts) && s_turn.msgs[0].tts == TTS_QUEUED);
+        event("message.assistant", "card", "note", "[[hatch widget:widget-d4d8e2]]");
+        assert(s_turn.nmsgs == 2 && s_turn.msgs[1].done && !s_turn.msgs[1].len);
+        assert(s_turn.msgs[1].tts == TTS_NONE && !s_turn.note_failed && !retries);
+        event("message.assistant", "mid", "note", "[[a]] Before [[b]] after [[c");
+        assert(!strcmp(texts + 2 * TEXT_MAX, "Before after") && s_turn.msgs[2].len == 12);
+        event("message.assistant", "plain", "note", "No [markup] here ]] at all.");
+        assert(!strcmp(texts + 3 * TEXT_MAX, "No [markup] here ]] at all."));
+    }
+    s_turn.texts = nullptr;
+}
+static void asked_turn() {
+    s_turn.texts = texts;
+    begin(true);
+    s_turn.ask = 7;
+    event("delta.message_start", "reply", "note");
+    event("delta.text_append", "reply", "", "Traffic is light. [[hatch widget:widget-map]]");
+    event("delta.message_done", "reply");
+    assert(!strcmp(texts, "Traffic is light."));
+    assert(s_turn.msgs[0].done && s_turn.msgs[0].tts == TTS_NONE);
+    event("message.assistant", "more", "note", "Twenty minutes home.");
+    assert(s_turn.nmsgs == 2 && s_turn.msgs[1].tts == TTS_NONE);
+    assert(!strcmp(texts + TEXT_MAX, "Twenty minutes home."));
+    /* The final text wins when the pieces didn't add up to it. */
+    event("delta.message_start", "short", "note");
+    event("delta.text_append", "short", "", "Half of");
+    event("delta.message_done", "short", "", "Half of it, then the rest.");
+    assert(!strcmp(texts + 2 * TEXT_MAX, "Half of it, then the rest.") && s_turn.msgs[2].len == 26);
+    s_turn.texts = nullptr;
+}
 int main(int argc, char **argv) {
     assert(argc == 2);
     switch (atoi(argv[1])) {
     case 0: rejected_deltas(); break;
     case 1: valid_parents(); break;
     case 2: bounded_rejections(); break;
+    case 3: app_markup(); break;
+    case 4: asked_turn(); break;
     default: return 2;
     }
 }
@@ -166,3 +212,9 @@ int main(int argc, char **argv) {
 
     def test_rejection_capacity_preserves_correlation(self):
         self.run_case(2)
+
+    def test_app_markup_is_not_spoken_or_captioned(self):
+        self.run_case(3)
+
+    def test_asked_turn_keeps_its_text_and_is_not_spoken(self):
+        self.run_case(4)

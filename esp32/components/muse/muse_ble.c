@@ -177,12 +177,21 @@ static void run_command(char *cmd)
         if (muse_settings_set_elevenlabs_key(v) != ESP_OK) {
             res = "error: key too long";
         }
+    } else if (!strcmp(cmd, "remote.key")) {
+        if (muse_settings_set_remote_key(v) != ESP_OK) {
+            res = "error: the key needs 12 to 63 characters (empty turns it off)";
+        }
+    } else if (!strcmp(cmd, "tts.url")) {
+        if (muse_settings_set_tts_url(v) != ESP_OK) {
+            res = "error: needs an http:// or https:// URL under 128 chars";
+        }
     } else {
         res = "error: unknown command or bad value";
     }
 
     /* Never echo secrets back. */
-    bool secret = !strcmp(cmd, "wifi.pass") || !strncmp(cmd, "hatch.token", 11);
+    bool secret = !strcmp(cmd, "wifi.pass") || !strncmp(cmd, "hatch.token", 11) ||
+                  !strcmp(cmd, "elevenlabs.key") || !strcmp(cmd, "remote.key");
     snprintf(s_last, sizeof(s_last), "%s: %s", cmd, res);
     ESP_LOGI(TAG, "cmd %s%s%s -> %s", cmd, secret ? "" : "=", secret ? "" : v, res);
     muse_state_poke();

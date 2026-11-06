@@ -315,7 +315,8 @@ class HatchVoiceNote(NoteRequestAssertions, unittest.TestCase):
 
         constants = source[source.index('#define MIC_RATE'):source.index('/* ---- Voice task')]
         types = source[source.index('enum phase_t'):source.index('/* 10 KB')]
-        note = source[source.index('static bool send_note_part('):source.index('static void send_chat(')]
+        note_at = source.index('static bool send_note_part(')
+        note = source[note_at:source.index('static void send_chat(', note_at)]
         code = r'''
 #include <cstdint>
 #include <cstdio>

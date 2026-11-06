@@ -318,6 +318,12 @@ static void keyboard_buttons(unsigned ev)
     else if (ev & MUSE_BTN_ENTER) muse_menu_key(MUSE_MENU_SELECT);
 }
 
+void muse_input_wake(const char *why)
+{
+    set_asleep(false, why);
+    muse_state_poke();
+}
+
 /* A pairing prompt wakes the screen and keeps it on; otherwise idle sleeps. */
 static void check_sleep(void)
 {

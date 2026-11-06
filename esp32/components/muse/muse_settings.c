@@ -46,6 +46,8 @@ static struct {
     char vm[MUSE_VM_MAX + 1];
     char token[MUSE_TOKEN_MAX + 1];
     char el_key[MUSE_EL_KEY_MAX + 1];
+    char tts_url[MUSE_TTS_URL_MAX + 1];
+    char remote_key[MUSE_REMOTE_KEY_MAX + 1];
 } s = {
     .volume = CONFIG_MUSE_DEFAULT_VOLUME,
     .speaker_on = true,
@@ -135,6 +137,8 @@ esp_err_t muse_settings_init(void)
     load_str("vm", s.vm, sizeof(s.vm));
     load_str("token", s.token, sizeof(s.token));
     load_str("el_key", s.el_key, sizeof(s.el_key));
+    load_str("tts_url", s.tts_url, sizeof(s.tts_url));
+    load_str("remote_key", s.remote_key, sizeof(s.remote_key));
 
     s.volume = clampi(s.volume, 0, 100);
     s.mic_gain = clampi(s.mic_gain, 0, MUSE_MIC_GAIN_MAX);
@@ -331,5 +335,51 @@ esp_err_t muse_settings_set_elevenlabs_key(const char *key)
         save_str("el_key", s.el_key);
     });
     ESP_LOGI(TAG, "elevenlabs key %s", s.el_key[0] ? "set" : "cleared");
+    return ESP_OK;
+}
+
+void muse_settings_tts_url(char out[MUSE_TTS_URL_MAX + 1])
+{
+    LOCKED(strlcpy(out, s.tts_url[0] ? s.tts_url :
+#ifdef CONFIG_MUSE_TTS_URL
+                   CONFIG_MUSE_TTS_URL
+#else
+                   ""
+#endif
+                   , MUSE_TTS_URL_MAX + 1));
+}
+
+esp_err_t muse_settings_set_tts_url(const char *url)
+{
+    if (url && strlen(url) > MUSE_TTS_URL_MAX) {
+        return ESP_ERR_INVALID_SIZE;
+    }
+    if (url && url[0] && strncmp(url, "http://", 7) && strncmp(url, "https://", 8)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    LOCKED({
+        strlcpy(s.tts_url, url ? url : "", sizeof(s.tts_url));
+        save_str("tts_url", s.tts_url);
+    });
+    ESP_LOGI(TAG, "speech url %s", s.tts_url[0] ? s.tts_url : "cleared");
+    return ESP_OK;
+}
+
+void muse_settings_remote_key(char out[MUSE_REMOTE_KEY_MAX + 1])
+{
+    LOCKED(strlcpy(out, s.remote_key, MUSE_REMOTE_KEY_MAX + 1));
+}
+
+esp_err_t muse_settings_set_remote_key(const char *key)
+{
+    size_t n = key ? strlen(key) : 0;
+    if (n > MUSE_REMOTE_KEY_MAX || (n && n < MUSE_REMOTE_KEY_MIN)) {
+        return ESP_ERR_INVALID_SIZE;
+    }
+    LOCKED({
+        strlcpy(s.remote_key, n ? key : "", sizeof(s.remote_key));
+        save_str("remote_key", s.remote_key);
+    });
+    ESP_LOGI(TAG, "asking over Wi-Fi %s", n ? "on: key set" : "off: key cleared");
     return ESP_OK;
 }

@@ -47,6 +47,10 @@ menu "Muse"
             bool "Waveshare ESP32-S3-Touch-LCD-1.85C"
             depends on IDF_TARGET_ESP32S3
 
+        config MUSE_BOARD_WAVESHARE_S3_146B
+            bool "Waveshare ESP32-S3-Touch-LCD-1.46B"
+            depends on IDF_TARGET_ESP32S3
+
         config MUSE_BOARD_ESP_MOSAICO
             bool "Espressif ESP-Mosaico (ESP32-S31)"
             depends on IDF_TARGET_ESP32S31
@@ -128,6 +132,7 @@ menu "Muse"
         default "ostb_echoear_2st" if MUSE_BOARD_OSTB_ECHOEAR_2ST
         default "waveshare_s3_216" if MUSE_BOARD_WAVESHARE_S3_216
         default "waveshare_s3_185c" if MUSE_BOARD_WAVESHARE_S3_185C
+        default "waveshare_s3_146b" if MUSE_BOARD_WAVESHARE_S3_146B
         default "esp_mosaico" if MUSE_BOARD_ESP_MOSAICO
         default "aipi" if MUSE_BOARD_AIPI
         default "espressif_box_3" if MUSE_BOARD_ESPRESSIF_BOX_3
@@ -276,5 +281,37 @@ menu "Muse"
         help
             eleven_flash_v2_5 is fast and multilingual; eleven_multilingual_v2
             sounds richer but starts later.
+
+    config MUSE_TTS_URL
+        string "Own speech server URL (OpenAI-style /v1/audio/speech)"
+        depends on MUSE_HATCH
+        default ""
+        help
+            A server on your network that turns reply text into MP3, such
+            as Kokoro-FastAPI: http://<computer-ip>:8880/v1/audio/speech.
+            Set, it is used instead of ElevenLabs. Empty: set one later over
+            USB with >tts.url=…; >tts.url= with nothing clears it.
+
+    config MUSE_TTS_VOICE
+        string "Voice for your own speech server"
+        depends on MUSE_HATCH
+        default "af_heart"
+        help
+            Sent as "voice". af_heart is one of Kokoro's American English
+            voices; the server lists the rest at /v1/audio/voices.
+
+    config MUSE_REMOTE_ASK
+        bool "Ask Muse from a phone over Wi-Fi"
+        depends on MUSE_HATCH
+        default y
+        help
+            Listens on the home network for POST /ask with a question, as
+            text or JSON {"text": "…"}. It goes to Muse as a typed turn and
+            the reply is spoken here, so an iPhone Shortcut can ask
+            hands-free ("Hey Siri, Ask Muse"). Refuses every question until
+            a key is set over USB with >remote.key=… (12 to 63 characters);
+            the phone sends it as "Authorization: Bearer <key>". It's plain
+            HTTP, so the key is only as private as your Wi-Fi. On battery the
+            board leaves Wi-Fi while asleep, so keep it on USB power.
 
 endmenu

@@ -34,6 +34,9 @@
 #define MUSE_VM_MAX 63
 #define MUSE_TOKEN_MAX 1023
 #define MUSE_EL_KEY_MAX 191              /* ElevenLabs xi-api-key / sk_… */
+#define MUSE_TTS_URL_MAX 127             /* OpenAI-style /v1/audio/speech URL */
+#define MUSE_REMOTE_KEY_MIN 12           /* the key a phone asks with (muse_remote.h) */
+#define MUSE_REMOTE_KEY_MAX 63
 
 #define MUSE_MIC_GAIN_MAX 36      /* dB; ES7210 PGA, applied in 3 dB steps */
 
@@ -69,6 +72,10 @@ size_t muse_settings_hatch_token_len(void);
 /* NVS override; empty means use CONFIG_MUSE_ELEVENLABS_API_KEY. */
 void muse_settings_elevenlabs_key(char out[MUSE_EL_KEY_MAX + 1]);
 bool muse_settings_elevenlabs_on(void);
+/* NVS override; empty means use CONFIG_MUSE_TTS_URL. Set, it wins over ElevenLabs. */
+void muse_settings_tts_url(char out[MUSE_TTS_URL_MAX + 1]);
+/* Empty: nobody can ask over Wi-Fi. */
+void muse_settings_remote_key(char out[MUSE_REMOTE_KEY_MAX + 1]);
 
 void muse_settings_set_volume(int pct);
 void muse_settings_set_speaker_on(bool on);
@@ -85,3 +92,6 @@ void muse_settings_set_hatch_vm(const char *vm);
 /* append=true adds to the stored token (for chunked BLE writes). */
 esp_err_t muse_settings_set_hatch_token(const char *token, bool append);
 esp_err_t muse_settings_set_elevenlabs_key(const char *key);
+esp_err_t muse_settings_set_tts_url(const char *url);
+/* MUSE_REMOTE_KEY_MIN..MAX characters, or empty to turn asking over Wi-Fi off. */
+esp_err_t muse_settings_set_remote_key(const char *key);

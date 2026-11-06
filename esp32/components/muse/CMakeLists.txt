@@ -45,6 +45,9 @@ if(CONFIG_MUSE_ENABLED)
     if(CONFIG_MUSE_HATCH)
         list(APPEND srcs "muse_chat.c" "muse_account_api.c" "muse_chat_session.cpp")
         list(APPEND embed "test_reply.mp3")   # muse_hatch_mp3_selftest
+        if(CONFIG_MUSE_REMOTE_ASK)
+            list(APPEND srcs "muse_remote.c")   # questions from a phone over Wi-Fi
+        endif()
     else()
         list(APPEND srcs "muse_chat_link.c")   # text replies over Link's session
     endif()
@@ -71,6 +74,8 @@ if(CONFIG_MUSE_ENABLED)
         list(APPEND srcs "boards/board_waveshare_s3_216.c" "boards/muse_lcd_bands.c")
     elseif(CONFIG_MUSE_BOARD_WAVESHARE_S3_185C)
         list(APPEND srcs "boards/board_waveshare_s3_185c.c" "boards/muse_lcd_bands.c")
+    elseif(CONFIG_MUSE_BOARD_WAVESHARE_S3_146B)
+        list(APPEND srcs "boards/board_waveshare_s3_146b.c" "boards/muse_lcd_bands.c")
     elseif(CONFIG_MUSE_BOARD_ESP_MOSAICO)
         list(APPEND srcs "boards/board_esp_mosaico.c" "boards/muse_lcd_bands.c")
     elseif(CONFIG_MUSE_BOARD_AIPI)
@@ -125,7 +130,7 @@ endif()
 
 set(muse_priv_requires
     esp_timer esp_driver_usb_serial_jtag esp_psram nvs_flash esp_pm esp_event esp_netif
-    bt esp-tls mbedtls esp_app_format esp_http_client
+    bt esp-tls mbedtls esp_app_format esp_http_client esp_http_server
     noise_core minimp3
     esp_lcd esp_adc esp_driver_i2s esp_driver_ledc esp_driver_spi esp_driver_uart esp_wifi
     esp_driver_pcnt efuse)

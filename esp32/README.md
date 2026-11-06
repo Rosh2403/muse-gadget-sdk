@@ -275,7 +275,20 @@ gadget text replies (HTTP 400); spoken output uses [ElevenLabs](https://elevenla
 streaming TTS from `start_tts` in
 [`components/muse/muse_chat_session.cpp`](components/muse/muse_chat_session.cpp)
 when `CONFIG_MUSE_ELEVENLABS_API_KEY` is set or you send `>elevenlabs.key=…`
-over USB. Speaker-off stays text-only at reading pace. Ask for shorter
+over USB. To use a free speech server on your own network instead, such as
+[Kokoro-FastAPI](https://github.com/remsky/Kokoro-FastAPI), set
+`CONFIG_MUSE_TTS_URL` or send `>tts.url=http://<computer-ip>:8880/v1/audio/speech`;
+it takes priority over ElevenLabs, and `CONFIG_MUSE_TTS_VOICE` picks the voice.
+Speaker-off stays text-only at reading pace.
+
+To ask from a phone without touching the board, set a key over USB with
+`>remote.key=…` (12 to 63 characters), then POST the question to
+`http://<board-ip>/ask` with `Authorization: Bearer <key>` and a body of
+`{"text": "…"}` ([`components/muse/muse_remote.h`](components/muse/muse_remote.h)).
+The screen wakes and the answer is spoken. An iPhone Shortcut with Ask for
+Input and Get Contents of URL makes that "Hey Siri, Ask Muse". It's plain HTTP
+on your home network, so the key is only as private as your Wi-Fi. Keep the
+board on USB power: on battery it leaves Wi-Fi while asleep. Ask for shorter
 answers in the message itself if you want them brief (for example
 "Answer in one sentence.").
 
